@@ -139,6 +139,7 @@ def main():
         with open(torrent_file_path, "rb") as file:
             content = file.read()
         decoded_content = bencodepy.decode(content)
+        print(f"Decoded content: {decoded_content}")
         info = bytes_to_str(decoded_content)
         info_hash = hashlib.sha1(bencodepy.encode(decoded_content[b"info"])).hexdigest()
         print(f'Tracker URL: {info["announce"]}')
