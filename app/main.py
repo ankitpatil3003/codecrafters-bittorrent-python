@@ -138,13 +138,31 @@ def main():
         torrent_file_path = sys.argv[2]
         with open(torrent_file_path, "rb") as file:
             content = file.read()
+        
+        # Decode the torrent file
         decoded_content = bencodepy.decode(content)
-        print(f"Decoded content: {decoded_content}")
+        
+        # Debugging: print the decoded content to inspect it
+        # print(f"Decoded content: {decoded_content}")
+
+        # Convert the decoded content to strings where necessary
         info = bytes_to_str(decoded_content)
+
+        # Handle the 'announce' field separately to ensure proper decoding
+        tracker_url = info.get("announce")
+        
+        # Check if the 'announce' field is bytes, and decode it
+        if isinstance(tracker_url, bytes):
+            tracker_url = tracker_url.decode("utf-8")
+        
+        # Get the info hash
         info_hash = hashlib.sha1(bencodepy.encode(decoded_content[b"info"])).hexdigest()
-        print(f'Tracker URL: {info["announce"]}')
+        
+        # Output the required fields
+        print(f'Tracker URL: {tracker_url}')
         print(f'Length: {info["info"]["length"]}')
         print(f"Info Hash: {info_hash}")
+
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
