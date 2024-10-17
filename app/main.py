@@ -171,7 +171,13 @@ def main():
         # Output the required fields
         print(f'Tracker URL: {tracker_url}')
         print(f'Length: {info["info"]["length"]}')
-        print(f"Info Hash: {info_hash}")
+        print(
+            f'Info Hash: {hashlib.sha1(bencodepy.encode(decoded_content[b"info"])).hexdigest()}'
+        )
+        print(f'Piece Length: {data["info"]["piece length"]}')
+        print(f"Piece Hashes: ")
+        for i in range(0, len(decoded_content[b"info"][b"pieces"]), 20):
+            print(decoded_content[b"info"][b"pieces"][i : i + 20].hex())
 
     else:
         raise NotImplementedError(f"Unknown command {command}")
