@@ -11,7 +11,7 @@ import bencodepy
 # - decode_bencode(b"5:hello") -> b"hello"
 # - decode_bencode(b"10:hello12345") -> b"hello12345"
 
-# bc = bencodepy.Bencode(encoding="utf-8")
+bc = bencodepy.Bencode(encoding="utf-8")
 
 # def decode_part(value, start_index):
 #     if chr(value[start_index]).isdigit():
@@ -71,38 +71,38 @@ import bencodepy
 
 def decode_bencode(bencoded_value):
     # Check if the first character indicates a string (digits followed by a colon)
-    # if chr(bencoded_value[0]).isdigit():
-    #     first_colon_index = bencoded_value.find(b":")
-    #     if first_colon_index == -1:
-    #         raise ValueError("Invalid bencoded string: missing colon")
-        
-    #     # Extract the length of the string
-    #     length = int(bencoded_value[:first_colon_index])
-        
-    #     # Extract the string using the length value
-    #     start_index = first_colon_index + 1
-    #     return bencoded_value[start_index:start_index + length]
-    
-    # elif bencoded_value.startswith(b"i"):
-    #     return int(bencoded_value[1:-1])  # Handle integer
-    
-    # elif bencoded_value.startswith(b"l") or bencoded_value.startswith(b"d"):
-    #     return bc.decode(bencoded_value)  # Handle list or dictionary
-    
-    # else:
-    #     raise NotImplementedError("Only strings, integers, lists, and dictionaries are supported")
-
     if chr(bencoded_value[0]).isdigit():
-        length = int(bencoded_value.split(b":")[0])
-        return bencoded_value.split(b":")[1][:length]
-    elif chr(bencoded_value[0]) == "i":
-        return int(bencoded_value[1:-1])
-    elif chr(bencoded_value[0]) == "l":
-        return bencodepy.decode(bencoded_value)
-    elif chr(bencoded_value[0]) == "d":
-        return bencodepy.BencodeDecoder(encoding="utf-8").decode(bencoded_value)
+        first_colon_index = bencoded_value.find(b":")
+        if first_colon_index == -1:
+            raise ValueError("Invalid bencoded string: missing colon")
+        
+        # Extract the length of the string
+        length = int(bencoded_value[:first_colon_index])
+        
+        # Extract the string using the length value
+        start_index = first_colon_index + 1
+        return bencoded_value[start_index:start_index + length]
+    
+    elif bencoded_value.startswith(b"i"):
+        return int(bencoded_value[1:-1])  # Handle integer
+    
+    elif bencoded_value.startswith(b"l") or bencoded_value.startswith(b"d"):
+        return bc.decode(bencoded_value)  # Handle list or dictionary
+    
     else:
-        raise NotImplementedError("Only strings are supported at the moment")
+        raise NotImplementedError("Only strings, integers, lists, and dictionaries are supported")
+
+    # if chr(bencoded_value[0]).isdigit():
+    #     length = int(bencoded_value.split(b":")[0])
+    #     return bencoded_value.split(b":")[1][:length]
+    # elif chr(bencoded_value[0]) == "i":
+    #     return int(bencoded_value[1:-1])
+    # elif chr(bencoded_value[0]) == "l":
+    #     return bencodepy.decode(bencoded_value)
+    # elif chr(bencoded_value[0]) == "d":
+    #     return bencodepy.BencodeDecoder(encoding="utf-8").decode(bencoded_value)
+    # else:
+    #     raise NotImplementedError("Only strings are supported at the moment")
 
 
 def main():
