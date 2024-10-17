@@ -103,6 +103,23 @@ def decode_bencode(bencoded_value):
     #     return bencodepy.BencodeDecoder(encoding="utf-8").decode(bencoded_value)
     # else:
     #     raise NotImplementedError("Only strings are supported at the moment")
+    
+def bencode(data):
+    if isinstance(data, str):
+        return f"{len(data)}:{data}".encode()
+    elif isinstance(data, bytes):
+        return f"{len(data)}:".encode() + data
+    elif isinstance(data, int):
+        return f"i{data}e".encode()
+    elif isinstance(data, list):
+        return b"l" + b"".join(bencode(item) for item in data) + b"e"
+    elif isinstance(data, dict):
+        encoded_dict = b"".join(
+            bencode(key) + bencode(value) for key, value in sorted(data.items())
+        )
+        return b"d" + encoded_dict + b"e"
+    else:
+        raise TypeError(f"Type not serializable: {type(data)}")
 
 
 def main():
