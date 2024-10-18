@@ -364,6 +364,21 @@ def main():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         response_peer_id = ping_peer_magnet(peer_ip, peer_port, info_hash, peer_id, s)
         print(f"Peer ID: {response_peer_id}")
+        
+        # Bitfield
+        s.recv(4)
+        s.recv(1)
+        s.recv(4)
+        magnet_dict = {"m": {"ut_metadata": 18}}
+        encoded_magnet_dict = bencodepy.encode(magnet_dict)
+        s.sendall(integer_to_byte(len(encoded_magnet_dict) + 2))
+        s.sendall(b"\x14")
+        s.sendall(b"\x00")
+        s.sendall(encoded_magnet_dict)
+        payload_size = byte_to_integer(s.recv(4)) - 2
+        s.recv(1)
+        s.recv(1)
+        s.recv(payload_size)
     else:
         raise NotImplementedError(f"Unknown command {command}")
 if __name__ == "__main__":
