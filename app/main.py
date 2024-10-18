@@ -3,370 +3,367 @@ import sys
 import hashlib
 import bencodepy
 import requests
-from urllib.parse import unquote
-import struct
 import socket
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
-import threading
-
-def list_decode(bencoded_value):
-    decode_list = []
-    while chr(bencoded_value[0]) != "e":
-        value, bencoded_value = _decode_bencode(bencoded_value)
-        decode_list += [value]
-    return decode_list, bencoded_value[1:]
-
-def str_decode(bencoded_value):
+import struct
+import urllib.parse
+# Examples:
+#
+# - decode_bencode(b"5:hello") -> b"hello"
+# - decode_bencode(b"10:hello12345") -> b"hello12345"
+def decode_string(bencoded_value):
     first_colon_index = bencoded_value.find(b":")
-    key_length = int((bencoded_value[:first_colon_index]))
     if first_colon_index == -1:
         raise ValueError("Invalid encoded value")
-    key = bencoded_value[first_colon_index + 1 : first_colon_index + key_length + 1]
-    bencoded_value = bencoded_value[first_colon_index + key_length + 1 :]
-    return key, bencoded_value
-
-def int_decode(bencoded_value):
-    int_len = bencoded_value.find(b"e")
-    value = int(bencoded_value[:int_len])
-    bencoded_value = bencoded_value[int_len + 1 :]
-    return value, bencoded_value
-
-def dict_decode(bencoded_value):
-    # print(bencoded_value)
+    length = int(bencoded_value[:first_colon_index].decode())
+    start_index = first_colon_index + 1
+    try:
+        return (
+            bencoded_value[start_index : start_index + length].decode("utf-8"),
+            bencoded_value[start_index + length :],
+        )
+    except:
+        return (
+            bencoded_value[start_index : start_index + length],
+            bencoded_value[start_index + length :],
+        )
+def decode_integer(bencoded_value):
+    first_e_index = bencoded_value.find(b"e")
+    if first_e_index == -1:
+        raise ValueError("Invalid encoded value")
+    decoded_string = bencoded_value[1:first_e_index].decode()
+    return int(decoded_string), bencoded_value[first_e_index + 1 :]
+def decode_list(bencoded_value):
+    decoded_list = []
+    i = 1
+    while bencoded_value[i] != ord("e"):
+        element, remaining = decode_bencode(bencoded_value[i:])
+        decoded_list.append(element)
+        i = len(bencoded_value) - len(remaining)
+    return decoded_list, bencoded_value[i + 1 :]
+def decode_dict(bencoded_value):
     decoded_dict = {}
-    while chr(bencoded_value[0]) != "e":
-        key, bencoded_value = _decode_bencode(bencoded_value)
-        # print(key,":",bencoded_value)
-        value, bencoded_value = _decode_bencode(bencoded_value)
+    i = 1
+    while bencoded_value[i] != ord("e"):
+        key, remaining = decode_bencode(bencoded_value[i:])
+        i = len(bencoded_value) - len(remaining)
+        value, remaining = decode_bencode(bencoded_value[i:])
+        i = len(bencoded_value) - len(remaining)
         decoded_dict[key] = value
-    # print(decoded_dict)
-    return decoded_dict, bencoded_value[1:]
-
-def _decode_bencode(bencoded_value):
-    # print("decode 2",bencoded_value)
-    if chr(bencoded_value[0]).isdigit():
-        return str_decode(bencoded_value)
-    elif chr(bencoded_value[0]) == "i":
-        return int_decode(bencoded_value[1:])
-    elif chr(bencoded_value[0]) == "d":
-        return dict_decode(bencoded_value[1:])
-    elif chr(bencoded_value[0]) == "l":
-        return list_decode(bencoded_value[1:])
-    elif chr(bencoded_value[0]) == "e":
-        return _decode_bencode(bencoded_value[1:])
-    
+    return decoded_dict, bencoded_value[i + 1 :]
 def decode_bencode(bencoded_value):
-    return_value = []
-    while len(bencoded_value) > 0:
-        # print("before : ",bencoded_value,len(bencoded_value))
-        value, bencoded_value = _decode_bencode(bencoded_value)
-        # print("value in decode ",value)
-        return_value += [value]
-        # print("after : ",bencoded_value,len(bencoded_value))
-    if len(return_value) == 1:
-        return return_value[0]
+    if chr(bencoded_value[0]).isdigit():
+        return decode_string(bencoded_value)
+    elif chr(bencoded_value[0]) == "i":
+        return decode_integer(bencoded_value)
+    elif chr(bencoded_value[0]) == "l":
+        return decode_list(bencoded_value)
+    elif chr(bencoded_value[0]) == "d":
+        return decode_dict(bencoded_value)
     else:
-        return return_value
-    
-def decode_file(file):
-    with open(file, "rb") as pointer:
-        data = pointer.read()
-    return decode_bencode(data)
-def extractInfo(data):
-    info = bencodepy.encode(data[b"info"])
-    info_hash = hashlib.sha1(info).hexdigest()
-    url = bytes_to_str(data[b"announce"])
-    length = data[b"info"][b"length"]
-    piece_length = data[b"info"][b"piece length"]
-    pieces = data[b"info"][b"pieces"]
-    # print("pieces : ",len(pieces))
-    # Each piece is of 20 bytes therefore the following
-    hash_length = 20
-    # pieces_sep = [pieces[num:num+hash_length] for num in range(0,len(pieces),20)]
-    # #Hashes for the above
-    # pieces_hash = "".join(peice.hex()+"\n" for peice in pieces_sep)
-    pieces_hash = "".join(
-        pieces[index : index + 20].hex() + "\n" for index in range(0, len(pieces), 20)
+        raise NotImplementedError(
+            "Only strings and numbers are supported at the moment"
+        )
+def get_decoded_value(bencoded_file):
+    f = open(bencoded_file, "rb")
+    bencoded_value = f.read()
+    f.close()
+    decoded_value, _ = decode_bencode(bencoded_value)
+    return decoded_value
+def announce_url(decoded_value):
+    return decoded_value["announce"]
+def get_info_dict(decoded_value):
+    return decoded_value["info"]
+def get_sha_info(info_dict):
+    bencoded_info_dict = bencodepy.encode(info_dict)
+    return hashlib.sha1(bencoded_info_dict).hexdigest()
+def url_encode(info_hash):
+    split_string = "".join(
+        ["%" + info_hash[i : i + 2] for i in range(0, len(info_hash), 2)]
     )
-    # print(f"Tracker URL: {url} ")
-    # print(f"Length: {length}")
-    # print(f"Info Hash: {info_hash}")
-    # print(f"Piece Length: {piece_length}")
-    # # print("Length of Pieces : ",len(pieces))
-    # print(f"Piece Hashes:\n{pieces_hash}")
-    return (url, length, info_hash, piece_length, pieces_hash)
-def discoverPeers(data):
-    url, length, info_hash, piece_length, pieces_hash = extractInfo(data)
-    # url = bytes_to_str(data[b'announce'])
-    # length = data[b"info"][b"length"]
-    info = bencodepy.encode(data[b"info"])
-    info_hash = hashlib.sha1(info).digest()
-    # print(info)
-    params = {
-        "info_hash": info_hash,
-        "peer_id": "12345678901234567890",
-        "port": 6881,
-        "uploaded": 0,
-        "downloaded": 0,
-        "left": length,
-        "compact": 1,
-    }
-    response = requests.get(url, params=params)
-    response_dict = decode_bencode(response.content)
-    peers = response_dict.get(b"peers")
-    # print(peers)
-    peers_lst = {}
-    for i in range(0, len(peers), 6):
-        ip = ".".join(str(b) for b in peers[i : i + 4])
-        port = struct.unpack("!H", peers[i + 4 : i + 6])[0]
-        peers_lst[ip] = port
-        # print(f"Peer: {ip}:{port}")
-    return peers_lst
+    return split_string
+def ping_peer_torrent(peer_ip, peer_port, info_hash, peer_id, s):
+    info_hash = bytes.fromhex(info_hash)
+    s.connect((peer_ip, peer_port))
+    protocol_length = 19
+    protocol_length_bytes = protocol_length.to_bytes(1, byteorder="big")
+    s.sendall(protocol_length_bytes)
+    message = "BitTorrent protocol"
+    s.sendall(message.encode("utf-8"))
+    reserved_bytes = b"\x00" * 8
+    s.sendall(reserved_bytes)
+    s.sendall(info_hash)
+    s.sendall(peer_id.encode("utf-8"))
+    s.recv(1)
+    s.recv(19)
+    s.recv(8)
+    s.recv(20)
+    return s.recv(20).hex()
 
-def bytes_to_str(data):
-    if isinstance(data, bytes):
-        try:
-            return data.decode("utf-8")
-        except UnicodeDecodeError:
-            # If decoding fails, return a fallback representation of the bytes
-            return repr(data)
-    elif isinstance(data, dict):
-        return {bytes_to_str(key): bytes_to_str(value) for key, value in data.items()}
-    elif isinstance(data, list):
-        return [bytes_to_str(item) for item in data]
-    else:
-        return data
-    
-def tcpHandshake(data, ip, port, timeout=5):
-    info = bencodepy.encode(data[b"info"])
-    info_hash = hashlib.sha1(info).digest()
-    """hanshake consist of 19+BitTorrent Protocol+8 zeros+info_hash+peerID"""
-    handshake = (
-        b"\x13"
-        + b"BitTorrent protocol"
-        + b"\x00\x00\x00\x00\x00\x00\x00\x00"
-        + info_hash
-        + b"01234567890123456789")
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(25)
-    # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-    sock.connect((ip, int(port)))
-    sock.send(handshake)
-    data = sock.recv(68)
-    # sock.close()
-    """ 48 because 1byte(19)+19bytes(BitTorrent Protocol)+8bytes(0's)+20bytes(info hash) then we have the peerID"""
-    peer_id = data[48:].hex()
-    # print("Peer ID:",peer_id)
-    return peer_id, sock
-def create_peer_message(message_id, length_prefix=1, payload=b""):
-    # Calculate the length prefix as the length of the message ID + payload
-    length_prefix = length_prefix
-    length_prefix_bytes = length_prefix.to_bytes(4, byteorder="big")
-    # Construct the message
-    message = length_prefix_bytes + bytes([message_id]) + payload
-    return message
-
-def generate_send(
-    piece_index,
-    piece_length,
-    msg_socket,
-    file_length,
-    total_pieces,
-    block_size=16 * 1024,
-):
-    data_length = piece_length
-    # Handle the last piece size if it's smaller than the standard piece length
-    if piece_index == total_pieces - 1:
-        data_length = file_length % piece_length
-        # print(f"Last piece length: {data_length}")
-    total_blocks = (
-        data_length + block_size - 1
-    ) // block_size  # Correct number of blocks for the last piece
-    # print(f"Total Blocks = {total_blocks}")
-    # print("data length ",data_length)
-    DATA = bytearray()
-    for block in range(total_blocks):
-        begin = block * block_size
-        length = min(block_size, data_length - begin)
-        # Create the payload for the request message
-        payload = (
-            piece_index.to_bytes(4, byteorder="big")
-            + begin.to_bytes(4, byteorder="big")
-            + length.to_bytes(4, byteorder="big")
+def ping_peer_magnet(peer_ip, peer_port, info_hash, peer_id, s):
+    info_hash = bytes.fromhex(info_hash)
+    s.connect((peer_ip, peer_port))
+    protocol_length = 19
+    protocol_length_bytes = protocol_length.to_bytes(1, byteorder="big")
+    s.sendall(protocol_length_bytes)
+    message = "BitTorrent protocol"
+    s.sendall(message.encode("utf-8"))
+    reserved_bytes = b"\x00\x00\x00\x00\x00\x10\x00\x00"
+    s.sendall(reserved_bytes)
+    s.sendall(info_hash)
+    s.sendall(peer_id.encode("utf-8"))
+    s.recv(1)
+    s.recv(19)
+    s.recv(8)
+    s.recv(20)
+    return s.recv(20).hex()
+def get_peer_address_torrent(bencoded_file):
+    decoded_value = get_decoded_value(bencoded_file)
+    url = announce_url(decoded_value)
+    info_dict = get_info_dict(decoded_value)
+    sha_info_hash = get_sha_info(info_dict)
+    encoded_hash = url_encode(sha_info_hash)
+    peer_id = "3a5f9c1e2d4a8e3b0f6c"
+    port = 6881
+    uploaded = 0
+    downloaded = 0
+    left = info_dict["length"]
+    compact = 1
+    query_string = (
+        f"info_hash={encoded_hash}&"
+        f"peer_id={peer_id}&"
+        f"port={port}&"
+        f"uploaded={uploaded}&"
+        f"downloaded={downloaded}&"
+        f"left={left}&"
+        f"compact={compact}"
+    )
+    complete_url = f"{url}?{query_string}"
+    r = requests.get(complete_url)
+    decoded_dict, _ = decode_bencode(r.content)
+    peers = decoded_dict["peers"]
+    decimal_values = [byte for byte in peers]
+    ip_address_list = []
+    for i in range(0, len(decimal_values), 6):
+        ip_address = ".".join(str(num) for num in decimal_values[i : i + 4])
+        ip_address += (
+            f":{int.from_bytes(decimal_values[i+4:i+6], byteorder='big', signed=False)}"
         )
-        # Send the request to the peer
-        msg_socket.sendall(
-            create_peer_message(
-                message_id=6, length_prefix=1 + 4 + 4 + 4, payload=payload
-            )
+        ip_address_list.append(ip_address)
+    return ip_address_list
+def get_peer_address_magnet(url, sha_info_hash):
+    encoded_hash = url_encode(sha_info_hash)
+    peer_id = "3a5f9c1e2d4a8e3b0f6c"
+    port = 6881
+    uploaded = 0
+    downloaded = 0
+    left = 999
+    compact = 1
+    query_string = (
+        f"info_hash={encoded_hash}&"
+        f"peer_id={peer_id}&"
+        f"port={port}&"
+        f"uploaded={uploaded}&"
+        f"downloaded={downloaded}&"
+        f"left={left}&"
+        f"compact={compact}"
+    )
+    complete_url = f"{url}?{query_string}"
+    r = requests.get(complete_url)
+    decoded_dict, _ = decode_bencode(r.content)
+    peers = decoded_dict["peers"]
+    decimal_values = [byte for byte in peers]
+    ip_address_list = []
+    for i in range(0, len(decimal_values), 6):
+        ip_address = ".".join(str(num) for num in decimal_values[i : i + 4])
+        ip_address += (
+            f":{int.from_bytes(decimal_values[i+4:i+6], byteorder='big', signed=False)}"
         )
-        # Receive the length of the incoming data
-        len_byte = msg_socket.recv(4)
-        Tlength = int.from_bytes(len_byte, byteorder="big")
-        # Receive the actual data
-        data = msg_socket.recv(Tlength)
-        while len(data) < Tlength:
-            data += msg_socket.recv(Tlength - len(data))
-        # Append the data to the bytearray (ignore the header bytes if present)
-        DATA.extend(data[9:])
-    print(f"data got for peice {piece_index} of length", len(DATA))
-    # if type(DATA)==bytearray and DATA:
-    # print("DOne Here")
-    return DATA
-def download_piece(data, piece_index, msg_socket=None):
-    url, length, info_hash, piece_length, pieces_hash = extractInfo(data)
-    total_pieces = len(pieces_hash.splitlines())
-    if total_pieces <= piece_index:
-        print("piece index out of range")
-        return
-    # print(pieces_hash.splitlines()[piece_index])
-    if msg_socket == None:
-        peers_lst = discoverPeers(data)
-        ip, port = list(peers_lst.keys()), list(peers_lst.values())
-        peer_id, msg_socket = tcpHandshake(data, ip[0], port[0])
-    recv = msg_socket.recv(1024)
-    message_id = recv[4]  # --> 5 read and ignore
-    # print(" bit field received message ID : ",message_id)
-    msg_interested = create_peer_message(2)
-    msg_socket.send(msg_interested)
-    # print("interested sent")
-    while message_id != 1:
-        recv = msg_socket.recv(1024)
-        message_id = recv[4]
-        # message_id = int.from_bytes(recv[:4], byteorder='big')
-        # print(recv[1],"\nreceived  : ",message_id)
-    # print("received unchoke : ",message_id)
-    piece_data = generate_send(
-        piece_index=piece_index,
-        piece_length=piece_length,
-        msg_socket=msg_socket,
-        file_length=length,
-        total_pieces=total_pieces,
-    )  # ,num_blocks=len(pieces_hash.splitlines()))
-    # print(hashlib.sha1(data).hexdigest())
-    if hashlib.sha1(piece_data).hexdigest() == pieces_hash.splitlines()[piece_index]:
-        # print("Got the data perfectly")
-        return piece_data
-    else:
-        return b""
-    
-def get_data(data, peers_lst, piece_index, max_retries=3):
-    """Attempts to download a piece from the list of peers with retries."""
-    # retries = 0
-    # while retries < max_retries:
-    # Make sure there are peers available to try
-    if not peers_lst:
-        print(f"No available peers to download piece {piece_index}")
-        # break
-        return None, peers_lst
-    for ip, port in list(
-        peers_lst.items()
-    ):  # Make a list copy of peers to avoid modification issues
-        try:
-            _, msg_socket = tcpHandshake(data, ip, port)
-            piece_data = download_piece(data, piece_index, msg_socket)
-            if piece_data:
-                return piece_data, peers_lst  # Successfully downloaded piece
-        except Exception as e:
-            print(f"Exception occurred with peer {ip}:{port}: {e}")
-    return None, peers_lst  # Return None if all retries fail
-def download_torrent(data, dest_file):
-    file_data = {}
-    url, length, info_hash, piece_length, pieces_hash = extractInfo(data)
-    total_pieces = len(pieces_hash.splitlines())
-    with open(dest_file, "ab") as temp:
-        peers_lst = discoverPeers(data)
-        lst_pieces = list(range(total_pieces))
-        while lst_pieces:
-            if not peers_lst:
-                print("No peers left to attempt downloading pieces.")
-                break  # Exit if there are no peers available
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                future_data = {
-                    executor.submit(get_data, data, peers_lst, piece_index): piece_index
-                    for piece_index in lst_pieces
-                }
-                for future in as_completed(future_data):
-                    piece_index = future_data[future]
-                    try:
-                        piece_data, peers_lst = future.result()
-                        if piece_data:
-                            file_data[piece_index] = piece_data
-                            lst_pieces.remove(
-                                piece_index
-                            )  # Only remove the piece if it was successfully downloaded
-                    except Exception as e:
-                        print(
-                            f"Exception occurred while processing piece {piece_index}: {e}"
-                        )
-        # Write the downloaded pieces to the file in order
-        if len(file_data) == total_pieces:
-            for i in range(total_pieces):
-                temp.write(file_data[i])
-            print("Download completed successfully.")
-        else:
-            print(f"Download incomplete. {len(lst_pieces)} pieces failed to download.")
-def extract_magnet_info(magnet_url):
-    string_url = magnet_url.split("&")
-    # print(f"String Url {string_url}")
-    # parsed_url = urlparse(magnet_url)
-    # params = parse_qs(parsed_url.query)
-    info_hash = string_url[0].split(":")[-1]
-    display_name = string_url[1].split("=")[-1]
-    tracker = unquote(string_url[2].split("=")[-1])
-    return {"info_hash": info_hash, "display_name": display_name, "tracker": tracker}
-
+        ip_address_list.append(ip_address)
+    return ip_address_list
+def receive_large_data(s, size):
+    result_data = b""
+    curr_size = 0
+    while curr_size < size:
+        data_size_to_receive = min(4096, size - curr_size)
+        temp_data = s.recv(data_size_to_receive)
+        curr_size += len(temp_data)
+        result_data += temp_data
+    return result_data
+def integer_to_byte(integer):
+    return struct.pack(">I", integer)
+def byte_to_integer(byte):
+    return struct.unpack(">I", byte)[0]
+def send_data(s, piece_offset, block_offset, data_length):
+    s.sendall(b"\x00\x00\x00\x0d")
+    s.sendall(b"\x06")
+    s.sendall(integer_to_byte(piece_offset))
+    s.sendall(integer_to_byte(block_offset))
+    s.sendall(integer_to_byte(data_length))
+def receive_data(s):
+    payload_size = byte_to_integer(s.recv(4))
+    s.recv(1)
+    s.recv(4)
+    s.recv(4)
+    return receive_large_data(s, payload_size - 9)
 def main():
     command = sys.argv[1]
     if command == "decode":
         bencoded_value = sys.argv[2].encode()
-        print(json.dumps(bytes_to_str(decode_bencode(bencoded_value))))
+        # json.dumps() can't handle bytes, but bencoded "strings" need to be
+        # bytestrings since they might contain non utf-8 characters.
+        #
+        # Let's convert them to strings for printing to the console.
+        def bytes_to_str(data):
+            if isinstance(data, bytes):
+                return data.decode()
+            raise TypeError(f"Type not serializable: {type(data)}")
+        decoded_value, _ = decode_bencode(bencoded_value)
+        print(json.dumps(decoded_value, default=bytes_to_str))
     elif command == "info":
-        file = sys.argv[2]
-        url, length, info_hash, piece_length, pieces_hash = extractInfo(
-            decode_file(file)
-        )
-        print(f"Tracker URL: {url} ")
-        print(f"Length: {length}")
-        print(f"Info Hash: {info_hash}")
-        print(f"Piece Length: {piece_length}")
-        print(f"Piece Hashes:\n{pieces_hash}")
+        bencoded_file = sys.argv[2]
+        decoded_value = get_decoded_value(bencoded_file)
+        url = announce_url(decoded_value)
+        info_dict = get_info_dict(decoded_value)
+        sha_info_hash = get_sha_info(info_dict)
+        pieces = info_dict["pieces"]
+        hex_string = pieces.hex()
+        print(f"Tracker URL: {url}")
+        print(f'Length: {info_dict["length"]}')
+        print(f"Info Hash: {sha_info_hash}")
+        print(f'Piece Length: {info_dict["piece length"]}')
+        print("Piece Hashes:")
+        for i in range(0, len(hex_string), 40):
+            print(hex_string[i : i + 40])
     elif command == "peers":
-        file = sys.argv[2]
-        peers_lst = discoverPeers(decode_file(file))
-        for ip, port in peers_lst.items():
-            print(f"Peer: {ip}:{port}")
+        bencoded_file = sys.argv[2]
+        ip_address_list = get_peer_address_torrent(bencoded_file)
+        for ip_address in ip_address_list:
+            print(ip_address)
     elif command == "handshake":
-        file = sys.argv[2]
-        ip, port = sys.argv[3].split(":")
-        peer_id, _ = tcpHandshake(decode_file(file), ip, port)
-        print("Peer ID:", peer_id)
-    elif command == "download_piece" and len(sys.argv) >= 5:
-        # print("Download piece impl")
-        # -o /tmp/test-piece-0 sample.torrent 0
-        tag = sys.argv[2]
-        dest_file = sys.argv[3]
-        file = sys.argv[4]
-        piece_index = int(sys.argv[5])
-        if tag == "-o":
-            data = download_piece(decode_file(file), piece_index)
-            if data != None:
-                with open(dest_file, "wb") as dest:
-                    dest.write(data)
-                    dest.close()
-    elif command == "download" and len(sys.argv) >= 4:
-        tag = sys.argv[2]
-        dest_file = sys.argv[3]
-        file = sys.argv[4]
-        if tag == "-o":
-            data = download_torrent(decode_file(file), dest_file)
-    elif command == "magnet_parse":
-        magnet_url = sys.argv[2]
-        # print(magnet_url)
-        magnet_extract = extract_magnet_info(magnet_url)
-        print(
-            f"Tracker URL: {magnet_extract['tracker']}\nInfo Hash: {magnet_extract['info_hash']}"
+        bencoded_file = sys.argv[2]
+        peer_details = sys.argv[3]
+        peer_ip, peer_port = peer_details.split(":")
+        peer_port = int(peer_port)
+        decoded_value = get_decoded_value(bencoded_file)
+        url = announce_url(decoded_value)
+        info_dict = get_info_dict(decoded_value)
+        sha_info_hash = get_sha_info(info_dict)
+        peer_id = "3a5f9c1e2d4a8e3b0f6c"
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        response_peer_id = ping_peer_torrent(
+            peer_ip, peer_port, sha_info_hash, peer_id, s
         )
+        print(f"Peer ID: {response_peer_id}")
+    elif command == "download_piece":
+        download_location = sys.argv[3]
+        torrent_file = sys.argv[4]
+        piece = int(sys.argv[5])
+        decoded_value = get_decoded_value(torrent_file)
+        url = announce_url(decoded_value)
+        info_dict = get_info_dict(decoded_value)
+        sha_info_hash = get_sha_info(info_dict)
+        ip_addresses = get_peer_address_torrent(torrent_file)
+        peer_ip, peer_port = ip_addresses[0].split(":")
+        peer_port = int(peer_port)
+        peer_id = "3a5f9c1e2d4a8e3b0f6c"
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        response_peer_id = ping_peer_torrent(
+            peer_ip, peer_port, sha_info_hash, peer_id, s
+        )
+        total_length = info_dict["length"]
+        piece_length = info_dict["piece length"]
+        piece_length = min(piece_length, total_length - piece * piece_length)
+        # Bitfield
+        s.recv(4)
+        s.recv(1)
+        s.recv(4)
+        # Interested
+        s.sendall(b"\x00\x00\x00\x01")
+        s.sendall(b"\x02")
+        # Unchoke
+        s.recv(4)
+        s.recv(1)
+        block_size = 2**14
+        curr_sent_data_size = 0
+        iterations = 0
+        while curr_sent_data_size < piece_length:
+            data_size_to_send = min(block_size, piece_length - curr_sent_data_size)
+            curr_sent_data_size += data_size_to_send
+            send_data(s, piece, iterations * block_size, data_size_to_send)
+            iterations += 1
+        result_data = b""
+        for i in range(0, iterations):
+            result_data += receive_data(s)
+        with open(download_location, "wb") as f:  # Use "wb" for binary write mode
+            f.write(result_data)  # No need to decode
+    elif command == "download":
+        download_location = sys.argv[3]
+        torrent_file = sys.argv[4]
+        decoded_value = get_decoded_value(torrent_file)
+        url = announce_url(decoded_value)
+        info_dict = get_info_dict(decoded_value)
+        sha_info_hash = get_sha_info(info_dict)
+        ip_addresses = get_peer_address_torrent(torrent_file)
+        peer_ip, peer_port = ip_addresses[0].split(":")
+        peer_port = int(peer_port)
+        peer_id = "3a5f9c1e2d4a8e3b0f6c"
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        response_peer_id = ping_peer_torrent(
+            peer_ip, peer_port, sha_info_hash, peer_id, s
+        )
+        total_length = info_dict["length"]
+        piece_length = info_dict["piece length"]
+        # Bitfield
+        s.recv(4)
+        s.recv(1)
+        s.recv(4)
+        # Interested
+        s.sendall(b"\x00\x00\x00\x01")
+        s.sendall(b"\x02")
+        # Unchoke
+        s.recv(4)
+        s.recv(1)
+        for i in range(0, total_length, piece_length):
+            curr_piece_length = min(piece_length, total_length - i)
+            block_size = 2**14
+            curr_sent_data_size = 0
+            iterations = 0
+            while curr_sent_data_size < curr_piece_length:
+                data_size_to_send = min(
+                    block_size, curr_piece_length - curr_sent_data_size
+                )
+                curr_sent_data_size += data_size_to_send
+                send_data(
+                    s, i // piece_length, iterations * block_size, data_size_to_send
+                )
+                iterations += 1
+            result_data = b""
+            for i in range(0, iterations):
+                result_data += receive_data(s)
+            with open(download_location, "ab") as f:
+                f.write(result_data)
+    elif command == "magnet_parse":
+        magnet_link = sys.argv[2]
+        info_hash_location = magnet_link.find("btih:") + 5
+        info_hash = magnet_link[info_hash_location : info_hash_location + 40]
+        url_location = magnet_link.find("tr=") + 3
+        url = magnet_link[url_location:]
+        print(f"Tracker URL: {urllib.parse.unquote(url)}")
+        print(f"Info Hash: {info_hash}")
+    elif command == "magnet_handshake":
+        magnet_link = sys.argv[2]
+        info_hash_location = magnet_link.find("btih:") + 5
+        info_hash = magnet_link[info_hash_location : info_hash_location + 40]
+        url_location = magnet_link.find("tr=") + 3
+        url = magnet_link[url_location:]
+        url = urllib.parse.unquote(url)
+        ip_addresses = get_peer_address_magnet(url, info_hash)
+        peer_ip, peer_port = ip_addresses[0].split(":")
+        peer_port = int(peer_port)
+        peer_id = "3a5f9c1e2d4a8e3b0f6c"
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        response_peer_id = ping_peer_magnet(peer_ip, peer_port, info_hash, peer_id, s)
+        print(f"Peer ID: {response_peer_id}")
     else:
         raise NotImplementedError(f"Unknown command {command}")
 if __name__ == "__main__":
