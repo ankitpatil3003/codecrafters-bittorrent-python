@@ -361,15 +361,15 @@ def get_magnet_info(
         piece_hashes_list.append(piece_hashes[i : i + 20].hex())
     magnet_info["pieces"] = piece_hashes_list
     return magnet_info
-def download_magnet_piece(meta_info: dict, piece_index: int) -> bytes:
+def download_magnet_piece(
+    magnet_info: dict, peer_socket: socket, piece_index: int
+) -> bytes:
     try:
         print(f"downloading piece_index: {piece_index} ...")
         block_size = 2**14
         byte_length = 4
         block_reqs = []
         piece_blocks = []
-        peer_socket, ext_handshake_dict = perform_extension_handshake(meta_info)
-        magnet_info = get_magnet_info(meta_info, ext_handshake_dict, peer_socket)
         total_file_length = magnet_info["Length"]
         piece_length = magnet_info["Piece Length"]
         piece_hashes_list = magnet_info["pieces"]
@@ -422,11 +422,33 @@ def download_magnet_piece(meta_info: dict, piece_index: int) -> bytes:
             )
         else:
             print(f"valid piece hash: {downloaded_piece_hash} | {piece_hash}")
-        peer_socket.close()
         return downloaded_piece
     except Exception as e:
         print("exception in download_magnet_piece")
         raise e
+    
+def download_magnet_file(magnet_info: dict, peer_socket: socket) -> None:
+    try:
+        torrent_outfile = Path(sys.argv[3])
+        print(f"downloading to {torrent_outfile} ...")
+        print(f"pieces to download: {len(magnet_info['pieces'])}")
+        for piece_index in range(len(magnet_info["pieces"])):
+            downloaded_piece: bytes = download_magnet_piece(
+                magnet_info, peer_socket, piece_index
+            )
+            if piece_index == 0:
+                outfile = torrent_outfile.open("wb")
+            else:
+                outfile = torrent_outfile.open("ab")
+            outfile.write(downloaded_piece)
+            outfile.close()
+            print(
+                f"piece_{piece_index} | {len(downloaded_piece)} downloaded to {torrent_outfile}"
+            )
+    except Exception as e:
+        print("exception in download_file")
+        raise e
+    
 def main():
     command = sys.argv[1]
     command_dict = {
@@ -503,9 +525,20 @@ def main():
         magnet_link = sys.argv[4]
         piece_index = int(sys.argv[5])
         meta_info = parse_magnet_link(magnet_link)
-        magnet_piece_data = download_magnet_piece(meta_info, piece_index)
+        peer_socket, ext_handshake_dict = perform_extension_handshake(meta_info)
+        magnet_info = get_magnet_info(meta_info, ext_handshake_dict, peer_socket)
+        magnet_piece_data = download_magnet_piece(magnet_info, peer_socket, piece_index)
         piece_outfile.write_bytes(magnet_piece_data)
         print(f"magnet piece downloaded to {piece_outfile}")
+        peer_socket.close()
+    elif command == "magnet_download":
+        magnet_link = sys.argv[4]
+        meta_info = parse_magnet_link(magnet_link)
+        peer_socket, ext_handshake_dict = perform_extension_handshake(meta_info)
+        magnet_info = get_magnet_info(meta_info, ext_handshake_dict, peer_socket)
+        download_magnet_file(magnet_info, peer_socket)
+        print("torrent magnet file download completed.")
+        peer_socket.close()
     else:
         raise Exception("Invalid command!")
     
