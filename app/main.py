@@ -4,7 +4,6 @@ import hashlib
 import requests
 import socket
 import logging
-
 from pathlib import Path
 from sys import meta_path
 from urllib.parse import urlencode, quote_plus, unquote_plus
@@ -361,6 +360,7 @@ def get_magnet_info(
         piece_hashes_list.append(piece_hashes[i : i + 20].hex())
     magnet_info["pieces"] = piece_hashes_list
     return magnet_info
+
 def download_magnet_piece(
     magnet_info: dict, peer_socket: socket, piece_index: int
 ) -> bytes:
@@ -426,7 +426,6 @@ def download_magnet_piece(
     except Exception as e:
         print("exception in download_magnet_piece")
         raise e
-    
 def download_magnet_file(magnet_info: dict, peer_socket: socket) -> None:
     try:
         torrent_outfile = Path(sys.argv[3])
@@ -448,7 +447,6 @@ def download_magnet_file(magnet_info: dict, peer_socket: socket) -> None:
     except Exception as e:
         print("exception in download_file")
         raise e
-    
 def main():
     command = sys.argv[1]
     command_dict = {
@@ -541,6 +539,5 @@ def main():
         peer_socket.close()
     else:
         raise Exception("Invalid command!")
-    
 if __name__ == "__main__":
     main()
