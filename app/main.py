@@ -361,7 +361,7 @@ def main():
         s.recv(1)
         handshake_message = s.recv(payload_size)
         handshake_message = decode_bencode(handshake_message)
-        print(f'Peer Metadata Extension ID: {handshake_message[0]['m']['ut_metadata']}')
+        print(f'Peer Metadata Extension ID: {handshake_message[0]["m"]["ut_metadata"]}')
     
     elif command == 'magnet_info':
         magnet_link = sys.argv[2]
@@ -407,6 +407,18 @@ def main():
         s.sendall(b'\x14')
         s.sendall(b'\x00')
         s.sendall(request_metadata)
+        payload_size = byte_to_integer(s.recv(4)) - 2
+        s.recv(1)
+        s.recv(1)
+        handshake_message = decode_bencode(s.recv(payload_size))
+        handshake_info_dict = decode_bencode(handshake_message[1])[0]
+        print(f'Tracker URL: {url}')   
+        print(f'Length: {handshake_info_dict['length']}')
+        print(f'Info Hash: {info_hash}')
+        print(f'Piece Length: {handshake_info_dict['piece length']}')
+        print(f'Piece Hashes:')
+        piece_hashes = handshake_info_dict['pieces'].hex()
+        print(piece_hashes)
     else:
         raise NotImplementedError(f"Unknown command {command}")
 if __name__ == "__main__":
